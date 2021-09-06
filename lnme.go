@@ -2,13 +2,16 @@ package main
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	rice "github.com/GeertJohan/go.rice"
 	"github.com/bumi/lnme/ln"
@@ -23,6 +26,12 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
+
+// Type for fetching crypto prices
+type coin struct {
+	Symbol string `json:"symbol"`
+	Price  string `json:"price"`
+}
 
 // Middleware for request limited to prevent too many requests
 // TODO: move to file
@@ -118,6 +127,52 @@ func main() {
 		return c.JSON(http.StatusOK, invoice)
 	})
 
+	// Create new invoice for tickets
+	e.POST("/v1/tkinvoices", func(c echo.Context) error {
+		// Check if there are available tickets
+		var avbTicket = ""
+		for i := 1; i < 21; i++ {
+			var curfile = fmt.Sprintf("files/tickets/ticket%d.txt", i)
+			if _, err := os.Stat(curfile); err == nil {
+				fmt.Printf("Ticket available: %s\n", curfile)
+				avbTicket = curfile
+				break
+			} else {
+				fmt.Printf("Ticket %s not available\n", curfile)
+				if i == 20 {
+					stdOutLogger.Printf("No ticket available")
+					return c.JSON(http.StatusInternalServerError, "No ticket available")
+				}
+			}
+		}
+
+		i := new(Invoice)
+		if err := c.Bind(i); err != nil {
+			stdOutLogger.Printf("Bad request: %s", err)
+			return c.JSON(http.StatusBadRequest, "Bad request")
+		}
+
+		var coin1 = fetchBinance()
+		iprice, err := strconv.ParseFloat(coin1.Price, 32)
+		var amount = 10 * 100000000 / iprice
+		var iValue int64 = int64(amount)
+
+		invoice, err := lnClient.AddInvoice(iValue, "Ticket Sale", nil)
+		if err != nil {
+			stdOutLogger.Printf("Error creating invoice: %s", err)
+			return c.JSON(http.StatusInternalServerError, "Error adding invoice")
+		}
+
+		var hashpath = fmt.Sprintf("files/hashes/%s.txt", invoice.PaymentHash)
+
+		err = os.Rename(avbTicket, hashpath)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		return c.JSON(http.StatusOK, invoice)
+	})
+
 	// Get next BTC onchain address
 	e.POST("/v1/newaddress", func(c echo.Context) error {
 		address, err := lnClient.NewAddress()
@@ -132,6 +187,19 @@ func main() {
 	e.GET("/v1/invoice/:paymentHash", func(c echo.Context) error {
 		paymentHash := c.Param("paymentHash")
 		invoice, err := lnClient.GetInvoice(paymentHash)
+
+		if err != nil {
+			stdOutLogger.Printf("Error looking up invoice: %s", err)
+			return c.JSON(http.StatusInternalServerError, "Error fetching invoice")
+		}
+
+		return c.JSON(http.StatusOK, invoice)
+	})
+
+	// Check ticket invoice status
+	e.GET("/v1/tkinvoice/:paymentHash", func(c echo.Context) error {
+		paymentHash := c.Param("paymentHash")
+		invoice, err := lnClient.GetTkInvoice(paymentHash)
 
 		if err != nil {
 			stdOutLogger.Printf("Error looking up invoice: %s", err)
@@ -184,11 +252,49 @@ func main() {
 		return c.JSON(http.StatusOK, "pong")
 	})
 
+	// Get price ticker from Binance
+	// https://github.com/JWW127/get-btc-price/blob/master/main.go
+	e.GET("/price", func(c echo.Context) error {
+		var coin1 = fetchBinance()
+		return c.JSON(http.StatusOK, coin1)
+	})
+
 	port := cfg.String("port")
 	if os.Getenv("PORT") != "" {
 		port = os.Getenv("PORT")
 	}
 	e.Logger.Fatal(e.Start(":" + port))
+}
+
+func fetchBinance() coin {
+	url := "https://api.binance.com/api/v3/ticker/price"
+
+	r, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	timeClient := http.Client{
+		Timeout: time.Second * 2,
+	}
+
+	res, getErr := timeClient.Do(r)
+	if err != nil {
+		log.Fatal(getErr)
+	}
+
+	body, readError := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Fatal(readError)
+	}
+
+	var coins []coin
+	jsonError := json.Unmarshal(body, &coins)
+	if jsonError != nil {
+		log.Fatal(jsonError)
+	}
+
+	return coins[1096] //  Specific place where you find BRLBTC
 }
 
 func LoadConfig() *koanf.Koanf {

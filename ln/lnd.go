@@ -30,6 +30,14 @@ type Invoice struct {
 	Settled        bool   `json:"settled"`
 }
 
+// Invoice type for ticket sale
+type TkInvoice struct {
+	PaymentHash    string `json:"payment_hash"`
+	PaymentRequest string `json:"payment_request"`
+	Settled        bool   `json:"settled"`
+	Ticket         string `json:"ticket"`
+}
+
 // LNDoptions are the options for the connection to the lnd node.
 type LNDoptions struct {
 	Address      string
@@ -104,6 +112,47 @@ func (c LNDclient) GetInvoice(paymentHashStr string) (Invoice, error) {
 	invoice.PaymentHash = hex.EncodeToString(result.RHash)
 	invoice.PaymentRequest = result.PaymentRequest
 	invoice.Settled = result.GetSettled()
+
+	return invoice, nil
+}
+
+// GetInvoice takes an invoice ID and returns the invoice details including settlement details
+// for tickets
+// An error is returned if no corresponding invoice was found.
+func (c LNDclient) GetTkInvoice(paymentHashStr string) (TkInvoice, error) {
+	var invoice TkInvoice
+	stdOutLogger.Printf("Getting ticket invoice: hash=%s\n", paymentHashStr)
+
+	plainHash, err := hex.DecodeString(paymentHashStr)
+	if err != nil {
+		return invoice, err
+	}
+
+	// Get the invoice for that hash
+	paymentHash := lnrpc.PaymentHash{
+		RHash: plainHash,
+		// Hex encoded, must be exactly 32 byte
+		RHashStr: paymentHashStr,
+	}
+	result, err := c.lndClient.LookupInvoice(c.ctx, &paymentHash)
+	if err != nil {
+		return invoice, err
+	}
+
+	invoice = TkInvoice{}
+	invoice.PaymentHash = hex.EncodeToString(result.RHash)
+	invoice.PaymentRequest = result.PaymentRequest
+	invoice.Settled = result.GetSettled()
+
+	if invoice.Settled == true {
+		var hashfile = fmt.Sprintf("files/hashes/%s.txt", invoice.PaymentHash)
+		content, err := ioutil.ReadFile(hashfile)
+		if err != nil {
+			invoice.Ticket = "Not available."
+		} else {
+			invoice.Ticket = string(content)
+		}
+	}
 
 	return invoice, nil
 }
