@@ -1,1 +1,214 @@
-../../local/webfiles/index.html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <title>CAPDEX - The descentralized exchange</title>
+    <style>
+      html {
+        width: 100%;
+        height: 100%;
+        font-size: 1vw;
+      }
+      body {
+        background-image: linear-gradient(60deg, #ffffff 0%, #ffffff 37%, #ffffff 65%, #ffffff 100%);
+        font-family: "Lucida Sans Unicode", "Lucida Grande", sans-serif;
+      }
+      .wrapper {
+        font-weight: 400;
+        line-height: 1.25;
+        margin-bottom: 1rem;
+        font-size: 2em;
+        color: #000;
+        width: 640px;
+        margin: 1em auto;
+        text-align: center;
+      }
+      .note {
+        font-size: 0.2em;
+      }
+      .wrapper h1 {
+        font-weight: 700;
+      }
+      .wrapper h2 {
+        font-weight: 400;
+      }
+      .wrapper a, .wrapper a:visited, .wrapper a:active {
+        color: #000;
+        text-decoration:none;
+      }
+      .wrapper p {
+        margin: 0.5em 0;
+      }
+      input, input:focus {
+        outline: none;
+        background-color: transparent;
+        font-size: 1em;
+        font-weight: 700;
+        border: none;
+        border-bottom: 1px solid #fff;
+        text-align: center;
+        color: #000;
+      }
+      ::placeholder {
+        color: #000;
+        opacity: 0.3;
+      }
+      input[type=number] {
+        -moz-appearance: textfield;
+      }
+      input::-webkit-outer-spin-button, input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      input.amount {
+        width: 300px;
+      }
+      input.memo {
+        width: 100%;
+      }
+      button {
+        color: #fff;
+        font-weight: 400;
+        font-size: 0.5em;
+        line-height: 1.5;
+        font-weight: 400;
+        width: 100%;
+        cursor: pointer;
+        border: none;
+        border-radius: 30px;
+        background-color: #2b76b9;
+      }
+      h2.lnme-value, h1.lnme-memo {
+        font-size: 2em;
+        font-weight: 400;
+      }
+
+      .lnme-wrapper {
+        margin-top: 1em;
+        font-size: 0.5em;
+        width: 100%;
+        white-space: nowrap;
+      }
+      .lnme-details {
+        text-overflow: ellipsis;
+        overflow: hidden;
+      }
+      .lnme-link {
+        text-overflow: ellipsis;
+        overflow: hidden;
+      }
+      .lnme-copy {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrapper">
+      Ticket do show:
+      <div id="pricer">
+          Loading...
+      </div>
+      <div class="form" id="form">
+        <p>
+          Contato:
+          <br>
+          <input type="text" class="memo" id="memo" placeholder="para reembolso" autocomplete="off">
+        </p>
+
+        <button id="send-button">Comprar</button>
+
+
+        <div id="lnme-wrapper" class="lnme-wrapper" style="display:none">
+          <div class="lnme-qrcode"></div>
+          <div class="lnme-details">
+            <a href="#" class="lnme-link"><span class="lnme-payment-request"></span></a>
+            <div class="lnme-copy">
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-copy"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </div>
+          </div>
+        </div>
+
+        <div id="loader" style="display:none">
+          <svg version="1.1" id="loader-1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="40px" height="40px" viewBox="0 0 50 50" style="enable-background:new 0 0 50 50;" xml:space="preserve">
+            <path fill="#000" d="M43.935,25.145c0-10.318-8.364-18.683-18.683-18.683c-10.318,0-18.683,8.365-18.683,18.683h4.068c0-8.071,6.543-14.615,14.615-14.615c8.072,0,14.615,6.543,14.615,14.615H43.935z">
+              <animateTransform attributeType="xml" attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="0.6s" repeatCount="indefinite"/>
+            </path>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <script src="/lnme.js" id="lnme-script"></script>
+    <script>
+      var ticker;
+      ticker = setInterval(update_ticker, 5000);
+
+      var urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('amount')) {
+        document.getElementById('amount').value = urlParams.get('amount');
+      }
+      if (urlParams.get('memo')) {
+        document.getElementById('memo').value = urlParams.get('memo');
+      }
+
+      	
+      function update_ticker() {
+        var ourRequest = new XMLHttpRequest();
+
+        ourRequest.open('GET', window.location.href+'price');
+        ourRequest.onload = function(){
+          var ourData = JSON.parse(ourRequest.responseText);
+          var curprice = parseFloat(ourData.price);
+          var satsamount = Math.round((10/curprice)*100000000);
+          document.getElementById('pricer').innerHTML = "10 BRL ou "+satsamount.toString()+" sats";
+        };
+        ourRequest.send();
+      }
+
+      document.getElementById('send-button').addEventListener('click', function(e) {
+        e.preventDefault();
+        document.getElementById('loader').style.display = 'block';
+
+        var memoElement = document.getElementById('memo');
+
+        e.target.setAttribute('disabled', true);
+        memoElement.setAttribute('disabled', true);
+
+        var lnme = new LnMe({ value: "5000", memo: memoElement.value, target: document.getElementById('lnme-wrapper') });
+
+        lnme.showPaymentRequest = function() {
+          document.getElementById('send-button').style.display = 'none';
+          document.getElementById('lnme-wrapper').style.display = 'block';
+          clearInterval(ticker);
+          this.populatePaymentRequest();
+        }
+        lnme.thanks = function(myhash) {
+          var ourRequest = new XMLHttpRequest();
+          ourRequest.open('GET', window.location.href+'v1/tkinvoice/'+myhash);
+          ourRequest.onload = function(){
+            var ourData = JSON.parse(ourRequest.responseText);
+                  document.getElementById('form').innerHTML = "<br>Obrigado pela compra!! <br><br> Seu código é: <br>"+ourData.ticket;
+          }
+          ourRequest.send();
+        }
+	 lnme.addInvoice = function() {
+	    let args = {
+	      method: 'POST',
+	      mode: 'cors',
+	      headers: { 'Content-Type': 'application/json' },
+	      body: JSON.stringify({ memo: this.memo, value: this.value })
+	    };
+	    return this._fetch(
+	      `${this.baseURL}/v1/tkinvoices`,
+	      args
+	      ).then((invoice) => {
+		this.invoice = invoice;
+		return invoice;
+	      });
+	  }
+        lnme.request();
+      });
+      update_ticker();
+    </script>
+  </body>
+</html>
